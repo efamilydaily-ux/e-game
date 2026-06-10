@@ -1,0 +1,259 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght=800;900&family=Noto+Sans+TC:wght=700;900&display=swap');
+
+:root {
+  --bg: #0a0a16;
+  --surface: rgba(22, 33, 62, 0.85);
+  --text: #F0F4FF;
+  --text-dim: #94A3B8;
+  --yellow: #FFD700;
+  --gold: #FFA500;
+  --blue: #3B82F6;
+  --radius: 24px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: 'Nunito', 'Noto Sans TC', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100dvh;
+  position: relative;
+  overflow-x: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+/* 核心需求：將大頭貼 Logo 作為全網頁背襯附加，微透明呈現高級感 */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image: url('STK-20260402-WA0016.png');
+  background-repeat: no-repeat;
+  background-position: center 40%;
+  background-size: min(500px, 90vw);
+  opacity: 0.06; /* 淡淡的浮水印背景，不干擾文字閱讀 */
+  filter: blur(2px);
+}
+
+/* 漸層光暈底層 */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background-image: 
+    radial-gradient(circle at 10% 20%, rgba(59, 130, 246, 0.15) 0%, transparent 50%),
+    radial-gradient(circle at 90% 80%, rgba(139, 92, 246, 0.1) 0%, transparent 50%);
+}
+
+.stars {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.portal-container {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 480px;
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* 品牌頂部視覺 */
+.portal-header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.brand-logo-wrap {
+  width: 130px;
+  height: 130px;
+  margin: 0 auto 12px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--blue), #8b5cf6);
+  padding: 3px;
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.35);
+}
+
+.brand-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  background: white;
+}
+
+.brand-title {
+  font-size: 32px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  background: linear-gradient(135deg, #ffffff, #cbd5e1);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.brand-subtitle {
+  font-size: 14px;
+  color: #60a5fa;
+  font-weight: 800;
+  margin-top: 4px;
+  letter-spacing: 2px;
+}
+
+/* 遊戲卡片佈局 */
+.games-grid {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.game-card {
+  background: var(--surface);
+  border: 2px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius);
+  padding: 20px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  text-decoration: none;
+  color: inherit;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+
+.game-card:active {
+  transform: scale(0.98);
+}
+
+/* 特定的寶可夢主題外卡效果 */
+.pokemon-theme {
+  background: linear-gradient(135deg, rgba(22, 33, 62, 0.9), rgba(227, 53, 13, 0.06));
+}
+
+.pokemon-theme:hover, .pokemon-theme:active {
+  border-color: rgba(255, 215, 0, 0.4);
+  box-shadow: 0 12px 35px rgba(255, 165, 0, 0.15);
+}
+
+.game-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: linear-gradient(135deg, #e3350d, #ff5722);
+  color: white;
+  font-size: 10px;
+  font-weight: 900;
+  padding: 4px 12px;
+  border-bottom-left-radius: 14px;
+  letter-spacing: 1px;
+}
+
+.game-icon {
+  font-size: 40px;
+  width: 64px;
+  height: 64px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.pokemon-theme .game-icon {
+  background: rgba(255, 215, 0, 0.1);
+  text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+}
+
+.game-details {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.game-name {
+  font-size: 18px;
+  font-weight: 900;
+  color: white;
+}
+
+.pokemon-theme .game-name {
+  color: var(--yellow);
+}
+
+.game-desc {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.4;
+  font-weight: 700;
+}
+
+.btn-enter-game {
+  align-self: flex-start;
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 900;
+  color: #60a5fa;
+}
+
+/* 未解鎖遊戲樣式 */
+.coming-soon {
+  opacity: 0.6;
+  border-style: dashed;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.coming-soon .game-name {
+  color: var(--text-dim);
+}
+
+.btn-enter-game.disabled {
+  color: rgba(255, 255, 255, 0.2);
+}
+
+/* 伊布主題卡片 */
+.eevee-theme {
+  background: linear-gradient(135deg, rgba(22, 33, 62, 0.9), rgba(180, 120, 60, 0.08));
+}
+
+.eevee-theme:hover, .eevee-theme:active {
+  border-color: rgba(210, 160, 90, 0.45);
+  box-shadow: 0 12px 35px rgba(180, 120, 60, 0.18);
+}
+
+.eevee-theme .game-icon {
+  background: rgba(210, 160, 90, 0.12);
+  text-shadow: 0 0 10px rgba(210, 160, 90, 0.5);
+}
+
+.eevee-theme .game-name {
+  color: #d4a05a;
+}
+
+.eevee-theme .btn-enter-game {
+  color: #d4a05a;
+}
+
+/* NEW 標籤（綠色，區別於 HOT 嘅紅色）*/
+.new-badge {
+  background: linear-gradient(135deg, #16a34a, #22c55e);
+}
