@@ -12,7 +12,7 @@ export default async function handler(req, res) {
 
   try {
     // 驗證大廳配發的 Token 安全性 (改用 redis.get)
-    const accountKey = `E_House:Account:${trainerName.toLowerCase()}`;
+    const accountKey = `E_Game:Account:${trainerName.toLowerCase()}`;
     const account = await redis.get(accountKey);
 
     if (!account || account.token !== token) {
@@ -20,7 +20,7 @@ export default async function handler(req, res) {
     }
 
     // 儲存進度到 Upstash (改用 redis.set)
-    const dataKey = `E_House:${trainerName}:${gameId}`;
+    const dataKey = `E_Game:${trainerName}:${gameId}`;
     await redis.set(dataKey, gameData);
 
     return res.status(200).json({ success: true });
