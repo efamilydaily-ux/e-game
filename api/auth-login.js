@@ -23,8 +23,8 @@ export default async function handler(req, res) {
   }
 
   const cleanName = trainerName.trim();
-  const accountKey = `E_House:Account:${cleanName.toLowerCase()}`;
-  const dataKey = `E_House:${cleanName}:${gameId}`;
+  const accountKey = `E_Game:Account:${cleanName.toLowerCase()}`;
+  const dataKey = `E_Game:${cleanName}:${gameId}`;
 
   try {
     // 檢查雲端有沒有這個帳號
