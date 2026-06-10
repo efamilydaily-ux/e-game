@@ -1,1 +1,705 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#04050f" />
+  <title>乘法神速賽</title>
+  <link rel="stylesheet" href="style.css" />
 
+  <!-- ══ 音效預載（Mixkit CDN — 無 CORS 問題）══════════════════ -->
+  <!-- correct: achievement bell -->
+  <audio id="snd-correct"  src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" preload="auto"></audio>
+  <!-- wrong: negative beeps -->
+  <audio id="snd-wrong"    src="https://assets.mixkit.co/active_storage/sfx/2955/2955-preview.mp3" preload="auto"></audio>
+  <!-- unlock: magical sparkle -->
+  <audio id="snd-unlock"   src="https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3" preload="auto"></audio>
+  <!-- complete: winning fanfare -->
+  <audio id="snd-complete" src="https://assets.mixkit.co/active_storage/sfx/1993/1993-preview.mp3" preload="auto"></audio>
+</head>
+<body>
+  <!-- ══ Star-field canvas ══════════════════════════════════════ -->
+  <canvas id="star-canvas"></canvas>
+  <div id="root"></div>
+
+  <script type="module">
+    import React, { useState, useEffect, useRef, useCallback }
+      from 'https://esm.sh/react@18';
+    import { createRoot } from 'https://esm.sh/react-dom@18/client';
+
+    // ════════════════════════════════════════════════════════════
+    //  GameClient (inline)
+    // ════════════════════════════════════════════════════════════
+    const GAME_ID = 'multiplication-blitz-v1';
+    class GameClient {
+      constructor(gameId = GAME_ID) {
+        this.gameId = gameId;
+        this.trainerName = null;
+        this.token = null;
+      }
+      async login(trainerName, password, defaultData) {
+        const res = await fetch('/api/auth-login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ trainerName, password, gameId: this.gameId, defaultData }),
+        });
+        const json = await res.json();
+        if (json.success) { this.trainerName = trainerName; this.token = json.token; }
+        return json;
+      }
+      async saveScore(gameData) {
+        if (!this.trainerName || !this.token) return { success: false, message: '尚未登入' };
+        const res = await fetch('/api/save-score', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            trainerName: this.trainerName,
+            gameId: this.gameId,
+            gameData,
+            token: this.token,
+          }),
+        });
+        return res.json();
+      }
+      async getScore() {
+        if (!this.trainerName) return { success: false, data: null };
+        const p = new URLSearchParams({ trainerName: this.trainerName, gameId: this.gameId });
+        return (await fetch(`/api/get-score?${p}`)).json();
+      }
+    }
+    const gameClient = new GameClient();
+
+    // ════════════════════════════════════════════════════════════
+    //  GameLogic (inline)
+    // ════════════════════════════════════════════════════════════
+    const GAME_CONFIG = {
+      DIGITS: [2,3,4,5,6,7,8,9],
+      POINTS_PER_20: 20,
+      CELLS_PER_PUZZLE: 12,
+      TOTAL_PUZZLES: 10,
+      CENTRE_INDEX: 5,
+      ERROR_REPLAY_AT: [5, 10, 20],
+    };
+    const UNLOCK_ORDER = [0,1,2,3,4,6,7,8,9,10,11,5];
+
+    function createDefaultGameData() {
+      return {
+        totalScore: 0, combo: 0, maxCombo: 0,
+        answeredCount: 0, correctCount: 0, wrongCount: 0,
+        puzzles: Array.from({ length: GAME_CONFIG.TOTAL_PUZZLES }, () => ({
+          unlockedIndices: [], completed: false,
+        })),
+        currentPuzzleIndex: 0,
+        errorTracker: {},
+      };
+    }
+
+    // ── 錯題複習：只在非剛答錯後才觸發，避免連續重複 ─────────────
+    function getDueReplayQuestion(errorTracker, answeredCount) {
+      for (const key of Object.keys(errorTracker)) {
+        const entry = errorTracker[key];
+        if (!entry.replayAt || entry.replayAt.length === 0) continue;
+        const nextAt = entry.replayAt[0];
+        // strict: answeredCount must EQUAL the checkpoint (not >=)
+        // to ensure the question only appears once per checkpoint
+        if (answeredCount === nextAt) {
+          return { a: entry.a, b: entry.b, answer: entry.a * entry.b };
+        }
+      }
+      return null;
+    }
+
+    function generateQuestion(errorTracker = {}, answeredCount = 0) {
+      const due = getDueReplayQuestion(errorTracker, answeredCount);
+      if (due) return { ...due, isReplay: true };
+      const { DIGITS } = GAME_CONFIG;
+      const a = DIGITS[Math.floor(Math.random() * DIGITS.length)];
+      const b = DIGITS[Math.floor(Math.random() * DIGITS.length)];
+      return { a, b, answer: a * b, isReplay: false };
+    }
+
+    function calcPoints(combo) {
+      if (combo >= 6) return 3;
+      if (combo >= 3) return 2;
+      return 1;
+    }
+
+    function applyScoreToPuzzle(gameData) {
+      // 若所有拼圖已全部完成，直接返回空陣列，不做任何解鎖動作
+      const allDone = gameData.puzzles.every(p => p.completed);
+      if (allDone) return [];
+
+      const newUnlocks = [];
+      const totalCellsEarned = Math.floor(gameData.totalScore / GAME_CONFIG.POINTS_PER_20);
+      let remaining = totalCellsEarned;
+      for (let pi = 0; pi < gameData.puzzles.length; pi++) {
+        const puzzle = gameData.puzzles[pi];
+        const cellsForThis = Math.min(remaining, GAME_CONFIG.CELLS_PER_PUZZLE);
+        const targetUnlocked = UNLOCK_ORDER.slice(0, cellsForThis);
+        const already = new Set(puzzle.unlockedIndices);
+        targetUnlocked.forEach(idx => {
+          if (!already.has(idx)) {
+            puzzle.unlockedIndices.push(idx);
+            if (pi === gameData.currentPuzzleIndex) newUnlocks.push(idx);
+          }
+        });
+        puzzle.unlockedIndices.sort((a, b) =>
+          UNLOCK_ORDER.indexOf(a) - UNLOCK_ORDER.indexOf(b));
+        puzzle.completed = puzzle.unlockedIndices.length >= GAME_CONFIG.CELLS_PER_PUZZLE;
+        remaining -= GAME_CONFIG.CELLS_PER_PUZZLE;
+        if (remaining <= 0) break;
+      }
+      // 只在還有下一張時才推進 currentPuzzleIndex
+      if (
+        gameData.puzzles[gameData.currentPuzzleIndex]?.completed &&
+        gameData.currentPuzzleIndex < GAME_CONFIG.TOTAL_PUZZLES - 1
+      ) {
+        gameData.currentPuzzleIndex += 1;
+      }
+      return newUnlocks;
+    }
+
+    function processAnswer(gameData, question, playerAnswer) {
+      const correct = playerAnswer === question.answer;
+      const next = JSON.parse(JSON.stringify(gameData));
+      const { a, b } = question;
+      const key = `${a}x${b}`;
+      next.answeredCount += 1;
+      let pointsEarned = 0, newUnlocks = [];
+
+      if (correct) {
+        next.combo += 1;
+        next.maxCombo = Math.max(next.maxCombo, next.combo);
+        next.correctCount += 1;
+        pointsEarned = calcPoints(next.combo - 1);
+        next.totalScore += pointsEarned;
+        // 複習答對 → 移出隊列
+        if (question.isReplay && next.errorTracker[key]) {
+          const e = next.errorTracker[key];
+          const doneAt = e.replayAt.shift();
+          e.replayed.push(doneAt);
+        }
+        newUnlocks = applyScoreToPuzzle(next);
+      } else {
+        next.combo = 0;
+        next.wrongCount += 1;
+        // 只記錄錯題，不做任何讓它立即重複出現的操作
+        if (!next.errorTracker[key]) {
+          next.errorTracker[key] = {
+            a, b,
+            replayAt: [...GAME_CONFIG.ERROR_REPLAY_AT],
+            replayed: [],
+          };
+        } else {
+          // 補充尚未排程的 checkpoint
+          const e = next.errorTracker[key];
+          GAME_CONFIG.ERROR_REPLAY_AT.forEach(cp => {
+            if (!e.replayAt.includes(cp) && !e.replayed.includes(cp)) e.replayAt.push(cp);
+          });
+          e.replayAt.sort((x, y) => x - y);
+        }
+      }
+      return { gameData: next, correct, pointsEarned, newUnlocks };
+    }
+
+    function generateOptions(correctAnswer) {
+      const opts = new Set([correctAnswer]);
+      let tries = 0;
+      while (opts.size < 4 && tries < 100) {
+        tries++;
+        const offset = Math.floor(Math.random() * 20) - 10;
+        const c = correctAnswer + offset;
+        if (c > 0 && c !== correctAnswer) opts.add(c);
+      }
+      return [...opts].sort(() => Math.random() - 0.5);
+    }
+
+    function getUnlockedSet(gameData, pi) {
+      return new Set(gameData.puzzles[pi]?.unlockedIndices ?? []);
+    }
+    function puzzleProgress(gameData) {
+      const p = gameData.puzzles[gameData.currentPuzzleIndex];
+      if (!p) return 0;
+      return Math.round((p.unlockedIndices.length / GAME_CONFIG.CELLS_PER_PUZZLE) * 100);
+    }
+    function scoreToNextCell(gameData) {
+      const earned = Math.floor(gameData.totalScore / GAME_CONFIG.POINTS_PER_20);
+      return (earned + 1) * GAME_CONFIG.POINTS_PER_20 - gameData.totalScore;
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  Audio helper  ← getElementById, no new Audio()
+    // ════════════════════════════════════════════════════════════
+    function playSound(id) {
+      try {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.currentTime = 0;
+        el.play().catch(() => {});
+      } catch (_) {}
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  useCountdown
+    // ════════════════════════════════════════════════════════════
+    function useCountdown(seconds, onExpire) {
+      const [remaining, setRemaining] = useState(seconds);
+      const timerRef    = useRef(null);
+      const onExpireRef = useRef(onExpire);
+      useEffect(() => { onExpireRef.current = onExpire; }, [onExpire]);
+
+      const reset = useCallback((s = seconds) => {
+        clearInterval(timerRef.current);
+        setRemaining(s);
+        timerRef.current = setInterval(() => {
+          setRemaining(prev => {
+            if (prev <= 1) { clearInterval(timerRef.current); onExpireRef.current(); return 0; }
+            return prev - 1;
+          });
+        }, 1000);
+      }, [seconds]);
+
+      const stop = useCallback(() => clearInterval(timerRef.current), []);
+      useEffect(() => () => clearInterval(timerRef.current), []);
+      return { remaining, reset, stop };
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  Pages enum
+    // ════════════════════════════════════════════════════════════
+    const PAGE = { LOGIN: 'login', MENU: 'menu', GAME: 'game' };
+    const e = React.createElement;
+
+    // ════════════════════════════════════════════════════════════
+    //  LoginScreen
+    // ════════════════════════════════════════════════════════════
+    function LoginScreen({ onLogin }) {
+      const [name, setName]       = useState('');
+      const [pass, setPass]       = useState('');
+      const [error, setError]     = useState('');
+      const [loading, setLoading] = useState(false);
+
+      const submit = async () => {
+        if (!name.trim() || !pass.trim()) { setError('請輸入名字與密碼'); return; }
+        if (name.trim().length < 4) { setError('訓練師名字至少需要 4 個字元'); return; }
+        if (pass.length < 6) { setError('密碼至少需要 6 個字元'); return; }
+        setLoading(true); setError('');
+        const r = await gameClient.login(name.trim(), pass, createDefaultGameData());
+        setLoading(false);
+        if (r.success) onLogin(r.data || createDefaultGameData());
+        else setError(r.message || '登入失敗，請再試一次');
+      };
+
+      return e('div', { className: 'login-screen' },
+        e('div', { className: 'login-card' },
+          e('div', { className: 'login-logo' }, '🚀'),
+          e('h1', { className: 'login-title' }, '乘法神速賽'),
+          e('p',  { className: 'login-subtitle' }, '⭐ 解鎖星際拼圖，挑戰極速乘法！'),
+          e('div', { className: 'field-group' },
+            e('label', null, '訓練師名字'),
+            e('input', { type: 'text', placeholder: '輸入你的名字…', value: name,
+              onChange: ev => setName(ev.target.value),
+              onKeyDown: ev => ev.key === 'Enter' && submit() })
+          ),
+          e('div', { className: 'field-group' },
+            e('label', null, '密碼（至少 6 字）'),
+            e('input', { type: 'password', placeholder: '設定或輸入密碼…', value: pass,
+              onChange: ev => setPass(ev.target.value),
+              onKeyDown: ev => ev.key === 'Enter' && submit() })
+          ),
+          error ? e('p', { className: 'login-error' }, error) : null,
+          e('button', { className: 'btn-primary', onClick: submit, disabled: loading },
+            loading ? '連線中…' : '進入遊戲 →')
+        )
+      );
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  MainMenu
+    // ════════════════════════════════════════════════════════════
+    function MainMenu({ gameData, onStartGame }) {
+      // 最近錯題：依 errorTracker 中的順序取前 10，最新答錯的排前面
+      const recent10 = Object.values(gameData.errorTracker || {})
+        .slice(-10)          // 最後記錄的 10 筆（最近答錯）
+        .reverse();          // 最新的排最前
+
+      return e('div', { className: 'menu-screen' },
+        e('div', { className: 'menu-header' },
+          e('h1', { className: 'login-title' }, '乘法神速賽'),
+          e('p',  { className: 'menu-score' }, '累積得分：', e('strong', null, gameData.totalScore))
+        ),
+        e('button', { className: 'btn-primary btn-start', onClick: onStartGame }, '▶ 開始遊戲'),
+        e('div', { className: 'menu-panels' },
+          // 最近錯題
+          e('div', { className: 'menu-panel' },
+            e('h2', { className: 'panel-title' }, '📋 最近錯的 10 題'),
+            recent10.length === 0
+              ? e('p', { className: 'panel-empty' }, '尚無錯題紀錄，繼續加油！')
+              : e('div', { className: 'error-grid' },
+                  ...recent10.map(entry =>
+                    e('div', { key: `${entry.a}x${entry.b}`, className: 'error-item' },
+                      e('span', { className: 'error-eq' },
+                        `${entry.a} × ${entry.b} = `,
+                        e('strong', null, `${entry.a * entry.b}`)
+                      )
+                    )
+                  )
+                )
+          ),
+          // 已解鎖照片 — 固定顯示全部 10 張（含未解鎖佔位）
+          e('div', { className: 'menu-panel' },
+            e('h2', { className: 'panel-title' }, '🖼 解鎖照片'),
+            e('div', { className: 'photo-grid' },
+              ...Array.from({ length: GAME_CONFIG.TOTAL_PUZZLES }, (_, i) => {
+                const p = gameData.puzzles[i];
+                const unlocked = p.unlockedIndices.length > 0;
+                return e('div', { key: i, className: 'photo-thumb-wrap' },
+                  unlocked
+                    ? e('div', {
+                        className: `photo-thumb${p.completed ? ' completed' : ''}`,
+                        style: { backgroundImage: `url(images/puzzle_${i}.png)` }
+                      },
+                        p.completed
+                          ? e('div', { className: 'photo-thumb-done' }, '✓')
+                          : e('div', { className: 'photo-thumb-overlay' },
+                              `${p.unlockedIndices.length}/${GAME_CONFIG.CELLS_PER_PUZZLE}`)
+                      )
+                    : e('div', { className: 'photo-thumb locked' },
+                        e('span', { className: 'photo-lock-icon' }, '🔒')
+                      ),
+                  e('span', { className: 'photo-label' }, `#${i + 1}`)
+                );
+              })
+            )
+          )
+        )
+      );
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  PuzzleGrid
+    // ════════════════════════════════════════════════════════════
+    function PuzzleGrid({ backgroundImage, unlockedSet, newlyUnlocked }) {
+      const COLS = 4, ROWS = 3;
+      return e('div', { className: 'puzzle-grid' },
+        ...Array.from({ length: COLS * ROWS }, (_, i) => {
+          const col = i % COLS, row = Math.floor(i / COLS);
+          const revealed = unlockedSet.has(i);
+          const flashing = newlyUnlocked.has(i);
+          const bpX = (col / (COLS - 1)) * 100;
+          const bpY = (row / (ROWS - 1)) * 100;
+          return e('div', {
+            key: i,
+            className: ['puzzle-cell', revealed ? 'revealed' : 'masked', flashing ? 'unlocking' : '']
+              .filter(Boolean).join(' '),
+            style: {
+              backgroundImage: `url(${backgroundImage})`,
+              backgroundSize:  `${COLS * 100}% ${ROWS * 100}%`,
+              backgroundPosition: `${bpX}% ${bpY}%`,
+            },
+          }, !revealed ? e('span', { className: 'mask-icon' }, '🔒') : null);
+        })
+      );
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  CongratsOverlay
+    // ════════════════════════════════════════════════════════════
+    function CongratsOverlay({ puzzleIndex, onNext, onMenu, onKeepPlaying }) {
+      const isLast = puzzleIndex >= GAME_CONFIG.TOTAL_PUZZLES - 1;
+      return e('div', { className: 'congrats-overlay' },
+        e('div', { className: 'congrats-card' },
+          e('div', { className: 'congrats-emoji' }, isLast ? '🏆' : '🎉'),
+          e('h2',  null, isLast ? '全部完成！' : '拼圖完成！'),
+          e('p',   null,
+            isLast
+              ? '你解鎖了全部 10 幅拼圖，是乘法冠軍！繼續練習讓反應更快吧！'
+              : e('span', null, '第 ', e('strong', null, puzzleIndex + 1), ' 幅圖解鎖完畢，你太厲害了！')
+          ),
+          e('div', { className: 'congrats-actions' },
+            e('button', { className: 'btn-secondary', onClick: onMenu }, '回主選單'),
+            isLast
+              ? e('button', { className: 'btn-primary', onClick: onKeepPlaying }, '繼續練習 ∞')
+              : e('button', { className: 'btn-primary', onClick: onNext }, '繼續挑戰 →')
+          )
+        )
+      );
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  GameScreen
+    // ════════════════════════════════════════════════════════════
+    function GameScreen({ gameData: initialData, onDataUpdate, onExit }) {
+      const [gameData, setGameData]             = useState(initialData);
+      const [question, setQuestion]             = useState(null);
+      const [options,  setOptions]              = useState([]);
+      const [feedback, setFeedback]             = useState(null);
+      const [selectedOption, setSelectedOption] = useState(null);
+      const [locked,  setLocked]                = useState(false);
+      const [newlyUnlocked, setNewlyUnlocked]   = useState(new Set());
+      const [showCongrats, setShowCongrats]     = useState(false);
+
+      const gameDataRef = useRef(initialData);
+      const questionRef = useRef(null);
+      const lockedRef   = useRef(false);
+      useEffect(() => { gameDataRef.current = gameData; }, [gameData]);
+      useEffect(() => { questionRef.current = question; }, [question]);
+      useEffect(() => { lockedRef.current   = locked;   }, [locked]);
+
+      const loadQuestion = useCallback(data => {
+        const q = generateQuestion(data.errorTracker, data.answeredCount);
+        setQuestion(q);
+        setOptions(generateOptions(q.answer));
+        setFeedback(null);
+        setSelectedOption(null);
+        setLocked(false);
+      }, []);
+
+      const handleExpire = useCallback(() => {
+        if (lockedRef.current || !questionRef.current) return;
+        handleAnswer(-1);
+      }, []);
+
+      const { remaining, reset: resetTimer, stop: stopTimer } =
+        useCountdown(3, handleExpire);
+
+      async function handleAnswer(playerAnswer) {
+        if (lockedRef.current || !questionRef.current || !gameDataRef.current) return;
+        setLocked(true); lockedRef.current = true;
+        stopTimer();
+        setSelectedOption(playerAnswer);
+
+        const { gameData: nextData, correct, newUnlocks } =
+          processAnswer(gameDataRef.current, questionRef.current, playerAnswer);
+
+        setFeedback(correct ? 'correct' : 'wrong');
+
+        if (newUnlocks.length > 0) {
+          // 有解鎖：只播 unlock 音效，不播 correct
+          playSound('snd-unlock');
+          setNewlyUnlocked(new Set(newUnlocks));
+          setTimeout(() => setNewlyUnlocked(new Set()), 1400);
+        } else {
+          // 無解鎖：正確播 correct，答錯播 wrong
+          playSound(correct ? 'snd-correct' : 'snd-wrong');
+        }
+
+        const prevIdx    = gameDataRef.current.currentPuzzleIndex;
+        const prevPuzzle = gameDataRef.current.puzzles[prevIdx];
+        const justCompleted = nextData.puzzles[prevIdx]?.completed && !prevPuzzle?.completed;
+
+        setGameData(nextData);
+        onDataUpdate(nextData);
+
+        // 靜默儲存，不顯示狀態
+        gameClient.saveScore(nextData).catch(() => {});
+
+        if (justCompleted) {
+          playSound('snd-complete');
+          setTimeout(() => setShowCongrats(true), 1500);  // 1.5 s 緩衝
+          return;
+        }
+
+        // ── 凍結 1.5 秒後進下一題 ────────────────────────────────
+        setTimeout(() => { loadQuestion(nextData); resetTimer(3); }, 1500);
+      }
+
+      useEffect(() => { loadQuestion(initialData); resetTimer(3); }, []);
+
+      function handleContinue() {
+        setShowCongrats(false);
+        loadQuestion(gameData);
+        resetTimer(3);
+      }
+
+      if (!question) return e('div', { className: 'loading-screen' },
+        e('div', { className: 'spinner' }), e('p', null, '載入中…'));
+
+      const pidx        = gameData.currentPuzzleIndex;
+      const unlockedSet = getUnlockedSet(gameData, pidx);
+      const progress    = puzzleProgress(gameData);
+      const toNext      = scoreToNextCell(gameData);
+      const allPuzzlesDone = gameData.puzzles.every(p => p.completed);
+      const combo       = gameData.combo;
+      const comboLabel  = combo >= 6 ? '🔥🔥🔥 MAX COMBO'
+        : combo >= 3 ? `🔥 COMBO x${combo}` : combo > 0 ? `Combo x${combo}` : '';
+      const tf = remaining / 3;
+      const tc = remaining <= 1 ? '#ef4444' : remaining <= 2 ? '#f59e0b' : '#22c55e';
+
+      return e('div', { className: 'game-screen' },
+        // HUD
+        e('header', { className: 'hud' },
+          e('div', { className: 'hud-score' },
+            e('span', { className: 'hud-label' }, '得分'),
+            e('span', { className: 'hud-value' }, gameData.totalScore)),
+          e('div', { className: 'hud-center' },
+            e('div', { className: 'timer-ring',
+              style: { '--fraction': tf, '--color': tc } },
+              e('span', { className: 'timer-number' }, remaining))),
+          e('div', { className: 'hud-right' },
+            e('div', { className: 'hud-puzzle' },
+              e('span', { className: 'hud-label' }, allPuzzlesDone ? '拼圖' : `拼圖 ${pidx+1}/10`),
+              e('span', { className: 'hud-value' }, allPuzzlesDone ? '🏆' : `${progress}%`)),
+            e('button', { className: 'btn-exit', onClick: onExit }, '✕ 退出'))
+        ),
+        comboLabel ? e('div', { className: `combo-banner${combo >= 6 ? ' max' : ''}` }, comboLabel) : null,
+        // Puzzle
+        e('section', { className: 'puzzle-section' },
+          e(PuzzleGrid, {
+            backgroundImage: `images/puzzle_${pidx}.png`,
+            unlockedSet,
+            newlyUnlocked,
+          }),
+          e('p', { className: 'next-unlock-hint' },
+            allPuzzlesDone ? '🏆 全部拼圖已完成，繼續挑戰！' : `再 ${toNext} 分解鎖下一格`
+          )
+        ),
+        // Question
+        e('section', { className: 'question-section' },
+          question.isReplay ? e('span', { className: 'replay-badge' }, '📋 複習題') : null,
+          e('div', { className: 'question-display' },
+            e('span', { className: 'operand' }, question.a),
+            e('span', { className: 'operator' }, '✕'),
+            e('span', { className: 'operand' }, question.b),
+            e('span', { className: 'operator' }, '='),
+            e('span', { className: 'answer-blank' }, '?')
+          )
+        ),
+        // Options
+        e('section', { className: 'options-grid' },
+          ...options.map(opt => {
+            let cls = 'option-btn';
+            if (selectedOption !== null) {
+              if (opt === question.answer) cls += ' correct';
+              else if (opt === selectedOption) cls += ' wrong';
+            }
+            return e('button', { key: opt, className: cls,
+              onClick: () => handleAnswer(opt), disabled: locked }, opt);
+          })
+        ),
+        // Feedback
+        feedback ? e('div', { className: `feedback-flash ${feedback}` },
+          feedback === 'correct' ? '✓ 正確！' : '✗ 再加油！') : null,
+        // Congrats
+        showCongrats ? e(CongratsOverlay, {
+          puzzleIndex: pidx,
+          onNext: handleContinue,
+          onMenu: onExit,
+          onKeepPlaying: handleContinue,   // 全部完成後繼續出題，不再解鎖
+        }) : null
+      );
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  Root App
+    // ════════════════════════════════════════════════════════════
+    function App() {
+      const [page, setPage]         = useState(PAGE.LOGIN);
+      const [gameData, setGameData] = useState(null);
+
+      if (page === PAGE.LOGIN) return e(LoginScreen, {
+        onLogin: data => { setGameData(data); setPage(PAGE.MENU); }
+      });
+      if (page === PAGE.MENU)  return e(MainMenu, {
+        gameData,
+        onStartGame: () => setPage(PAGE.GAME),
+      });
+      if (page === PAGE.GAME)  return e(GameScreen, {
+        gameData,
+        onDataUpdate: d => setGameData(d),
+        onExit: () => setPage(PAGE.MENU),
+      });
+    }
+
+    createRoot(document.getElementById('root')).render(e(App));
+
+    // ════════════════════════════════════════════════════════════
+    //  Star-field canvas animation
+    // ════════════════════════════════════════════════════════════
+    (function initStars() {
+      const canvas = document.getElementById('star-canvas');
+      const ctx    = canvas.getContext('2d');
+
+      let W, H, stars = [];
+
+      function resize() {
+        W = canvas.width  = window.innerWidth;
+        H = canvas.height = window.innerHeight;
+      }
+
+      function makeStar() {
+        return {
+          x:    Math.random() * W,
+          y:    Math.random() * H,
+          r:    Math.random() * 1.2 + 0.2,
+          // twinkle speed
+          speed: Math.random() * 0.008 + 0.002,
+          phase: Math.random() * Math.PI * 2,
+          // slow drift
+          vx:   (Math.random() - 0.5) * 0.04,
+          vy:   (Math.random() - 0.5) * 0.04,
+          // colour: mostly white, occasional teal or violet
+          hue:  Math.random() < 0.12 ? 174 : Math.random() < 0.08 ? 270 : 0,
+          sat:  Math.random() < 0.2  ? 80  : 0,
+        };
+      }
+
+      function init() {
+        resize();
+        stars = Array.from({ length: 220 }, makeStar);
+      }
+
+      let t = 0;
+      function draw() {
+        ctx.clearRect(0, 0, W, H);
+        t += 0.016;
+        for (const s of stars) {
+          const alpha = 0.35 + 0.55 * (0.5 + 0.5 * Math.sin(t * s.speed * 60 + s.phase));
+          const color = s.sat > 0
+            ? `hsla(${s.hue},${s.sat}%,85%,${alpha})`
+            : `rgba(220,230,255,${alpha})`;
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+          ctx.fillStyle = color;
+          ctx.fill();
+          s.x += s.vx; s.y += s.vy;
+          if (s.x < -2) s.x = W + 2;
+          if (s.x > W + 2) s.x = -2;
+          if (s.y < -2) s.y = H + 2;
+          if (s.y > H + 2) s.y = -2;
+        }
+        requestAnimationFrame(draw);
+      }
+
+      window.addEventListener('resize', resize);
+      init();
+      draw();
+    })();
+
+    // ════════════════════════════════════════════════════════════
+    //  Floating space decorations 🪐 ☄️ 🌟 ✨
+    // ════════════════════════════════════════════════════════════
+    (function spaceDecos() {
+      const icons  = ['🪐','☄️','🌟','✨','🛸','🌙','💫','⭐','🌌'];
+      const count  = 7;
+      for (let i = 0; i < count; i++) {
+        const el = document.createElement('div');
+        el.className = 'space-deco';
+        el.textContent = icons[i % icons.length];
+        const size = 14 + Math.random() * 18;
+        el.style.cssText = `
+          font-size: ${size}px;
+          left: ${8 + Math.random() * 84}%;
+          bottom: -${size * 2}px;
+          animation-duration: ${18 + Math.random() * 24}s;
+          animation-delay: ${-Math.random() * 20}s;
+          opacity: ${0.25 + Math.random() * 0.35};
+        `;
+        document.body.appendChild(el);
+      }
+    })();
+  </script>
+</body>
+</html>
