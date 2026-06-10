@@ -10,7 +10,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ success: false, message: '缺少必要參數。' });
   }
 
-  const dataKey = `E_House:${trainerName}:${gameId}`;
+  const dataKey = `E_Game:${trainerName}:${gameId}`;
   
   try {
     // 從 Upstash 讀取進度 (改用 redis.get)
