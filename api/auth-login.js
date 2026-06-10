@@ -1,5 +1,8 @@
 import { Redis } from '@upstash/redis'
-const redis = Redis.fromEnv()
+const redis = new Redis({
+  url: 'https://helpful-caiman-140568.upstash.io',
+  token: 'gQAAAAAAAiUYAAIgcDE5MWMyMzM4OTE2MTQ0NTA3OWM2NDFiMDJiYmM5Zjk5MA',
+})
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
