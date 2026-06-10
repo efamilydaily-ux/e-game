@@ -62,12 +62,19 @@ export function createDefaultGameData() {
 export function getDueReplayQuestion(errorTracker, answeredCount, lastQuestion = null) {
   for (const key of Object.keys(errorTracker)) {
     const entry = errorTracker[key];
+
+    // Already reserved for the current question cycle — skip to prevent repeat
+    if (entry.pendingAt != null) continue;
+
     if (!entry.replayAt || entry.replayAt.length === 0) continue;
 
     const nextReplayAt = entry.replayAt[0];
-    if (answeredCount >= nextReplayAt && !entry.replayed.includes(nextReplayAt)) {
-      // 跳過與上一題完全相同的複習題，避免連續重複
+    if (answeredCount >= nextReplayAt) {
+      // Skip if it would be identical to the last question
       if (lastQuestion && lastQuestion.a === entry.a && lastQuestion.b === entry.b) continue;
+
+      // Reserve this checkpoint now — prevents re-triggering before player answers
+      entry.pendingAt = entry.replayAt.shift();
       return { a: entry.a, b: entry.b, answer: entry.a * entry.b };
     }
   }
@@ -150,11 +157,13 @@ export function processAnswer(gameData, question, playerAnswer) {
     pointsEarned = calcPoints(next.combo - 1);
     next.totalScore += pointsEarned;
 
-    // Mark replay as done if this was a replay question
+    // Mark replay as done: consume pendingAt → replayed
     if (question.isReplay && next.errorTracker[key]) {
       const entry = next.errorTracker[key];
-      const doneAt = entry.replayAt.shift();
-      entry.replayed.push(doneAt);
+      if (entry.pendingAt != null) {
+        entry.replayed.push(entry.pendingAt);
+        entry.pendingAt = null;
+      }
     }
 
     // Calculate puzzle unlocks
@@ -169,9 +178,15 @@ export function processAnswer(gameData, question, playerAnswer) {
         a, b,
         replayAt: [...GAME_CONFIG.ERROR_REPLAY_AT],
         replayed: [],
+        pendingAt: null,
       };
     } else {
       const existingEntry = next.errorTracker[key];
+      // If a replay was pending (player answered wrong again), put it back at front
+      if (existingEntry.pendingAt != null) {
+        existingEntry.replayAt.unshift(existingEntry.pendingAt);
+        existingEntry.pendingAt = null;
+      }
       GAME_CONFIG.ERROR_REPLAY_AT.forEach(checkpoint => {
         if (
           !existingEntry.replayAt.includes(checkpoint) &&

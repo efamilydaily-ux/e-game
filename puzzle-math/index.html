@@ -96,27 +96,36 @@
       };
     }
 
-    // ── 錯題複習：只在非剛答錯後才觸發，避免連續重複 ─────────────
-    function getDueReplayQuestion(errorTracker, answeredCount) {
+    // ── 錯題複習出題（pendingAt 機制防止連續重複）───────────────
+    function getDueReplayQuestion(errorTracker, answeredCount, lastQuestion) {
       for (const key of Object.keys(errorTracker)) {
         const entry = errorTracker[key];
+        // 已預留給本輪 → 跳過，防止重複觸發
+        if (entry.pendingAt != null) continue;
         if (!entry.replayAt || entry.replayAt.length === 0) continue;
         const nextAt = entry.replayAt[0];
-        // strict: answeredCount must EQUAL the checkpoint (not >=)
-        // to ensure the question only appears once per checkpoint
-        if (answeredCount === nextAt) {
+        if (answeredCount >= nextAt) {
+          // 跳過與上一題相同的複習題
+          if (lastQuestion && lastQuestion.a === entry.a && lastQuestion.b === entry.b) continue;
+          // 立即移至 pendingAt，出題後不再重複返回
+          entry.pendingAt = entry.replayAt.shift();
           return { a: entry.a, b: entry.b, answer: entry.a * entry.b };
         }
       }
       return null;
     }
 
-    function generateQuestion(errorTracker = {}, answeredCount = 0) {
-      const due = getDueReplayQuestion(errorTracker, answeredCount);
+    function generateQuestion(errorTracker = {}, answeredCount = 0, lastQuestion = null) {
+      const due = getDueReplayQuestion(errorTracker, answeredCount, lastQuestion);
       if (due) return { ...due, isReplay: true };
       const { DIGITS } = GAME_CONFIG;
-      const a = DIGITS[Math.floor(Math.random() * DIGITS.length)];
-      const b = DIGITS[Math.floor(Math.random() * DIGITS.length)];
+      let a, b, attempts = 0;
+      // 最多重試 20 次，確保不與上一題相同
+      do {
+        a = DIGITS[Math.floor(Math.random() * DIGITS.length)];
+        b = DIGITS[Math.floor(Math.random() * DIGITS.length)];
+        attempts++;
+      } while (lastQuestion && lastQuestion.a === a && lastQuestion.b === b && attempts < 20);
       return { a, b, answer: a * b, isReplay: false };
     }
 
@@ -175,26 +184,32 @@
         next.correctCount += 1;
         pointsEarned = calcPoints(next.combo - 1);
         next.totalScore += pointsEarned;
-        // 複習答對 → 移出隊列
+        // 複習答對 → 消耗 pendingAt，記入 replayed
         if (question.isReplay && next.errorTracker[key]) {
           const e = next.errorTracker[key];
-          const doneAt = e.replayAt.shift();
-          e.replayed.push(doneAt);
+          if (e.pendingAt != null) {
+            e.replayed.push(e.pendingAt);
+            e.pendingAt = null;
+          }
         }
         newUnlocks = applyScoreToPuzzle(next);
       } else {
         next.combo = 0;
         next.wrongCount += 1;
-        // 只記錄錯題，不做任何讓它立即重複出現的操作
         if (!next.errorTracker[key]) {
           next.errorTracker[key] = {
             a, b,
             replayAt: [...GAME_CONFIG.ERROR_REPLAY_AT],
             replayed: [],
+            pendingAt: null,
           };
         } else {
-          // 補充尚未排程的 checkpoint
           const e = next.errorTracker[key];
+          // 複習答錯 → 把 pendingAt 還原回隊列前端
+          if (e.pendingAt != null) {
+            e.replayAt.unshift(e.pendingAt);
+            e.pendingAt = null;
+          }
           GAME_CONFIG.ERROR_REPLAY_AT.forEach(cp => {
             if (!e.replayAt.includes(cp) && !e.replayed.includes(cp)) e.replayAt.push(cp);
           });
@@ -348,23 +363,19 @@
                   )
                 )
           ),
-          // 已解鎖照片 — 固定顯示全部 10 張（含未解鎖佔位）
+          // 解鎖照片 — 只有完全完成（12/12格）才顯示圖片，其餘一律鎖頭
           e('div', { className: 'menu-panel' },
             e('h2', { className: 'panel-title' }, '🖼 解鎖照片'),
             e('div', { className: 'photo-grid' },
               ...Array.from({ length: GAME_CONFIG.TOTAL_PUZZLES }, (_, i) => {
                 const p = gameData.puzzles[i];
-                const unlocked = p.unlockedIndices.length > 0;
                 return e('div', { key: i, className: 'photo-thumb-wrap' },
-                  unlocked
+                  p.completed
                     ? e('div', {
-                        className: `photo-thumb${p.completed ? ' completed' : ''}`,
+                        className: 'photo-thumb completed',
                         style: { backgroundImage: `url(images/puzzle_${i}.png)` }
                       },
-                        p.completed
-                          ? e('div', { className: 'photo-thumb-done' }, '✓')
-                          : e('div', { className: 'photo-thumb-overlay' },
-                              `${p.unlockedIndices.length}/${GAME_CONFIG.CELLS_PER_PUZZLE}`)
+                        e('div', { className: 'photo-thumb-done' }, '✓')
                       )
                     : e('div', { className: 'photo-thumb locked' },
                         e('span', { className: 'photo-lock-icon' }, '🔒')
@@ -448,8 +459,8 @@
       useEffect(() => { questionRef.current = question; }, [question]);
       useEffect(() => { lockedRef.current   = locked;   }, [locked]);
 
-      const loadQuestion = useCallback(data => {
-        const q = generateQuestion(data.errorTracker, data.answeredCount);
+      const loadQuestion = useCallback((data, last = null) => {
+        const q = generateQuestion(data.errorTracker, data.answeredCount, last);
         setQuestion(q);
         setOptions(generateOptions(q.answer));
         setFeedback(null);
@@ -502,15 +513,16 @@
           return;
         }
 
-        // ── 凍結 1.5 秒後進下一題 ────────────────────────────────
-        setTimeout(() => { loadQuestion(nextData); resetTimer(3); }, 1500);
+        // ── 凍結 1.5 秒後進下一題（傳入當前題避免重複）────────────
+        const answeredQ = questionRef.current;
+        setTimeout(() => { loadQuestion(nextData, answeredQ); resetTimer(3); }, 1500);
       }
 
       useEffect(() => { loadQuestion(initialData); resetTimer(3); }, []);
 
       function handleContinue() {
         setShowCongrats(false);
-        loadQuestion(gameData);
+        loadQuestion(gameData, questionRef.current);
         resetTimer(3);
       }
 
