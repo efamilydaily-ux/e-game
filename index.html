@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>E家大小事 - 兒童玩住學中心</title>
+  <link rel="stylesheet" href="portal.css">
+  <style>
+    /* 乘法神速賽卡片主題 */
+    .puzzle-theme {
+      background: linear-gradient(135deg, #04050f 0%, #0d1428 60%, #0a0a2e 100%);
+      border: 1px solid rgba(0, 245, 212, 0.35);
+      box-shadow: 0 0 18px rgba(0, 245, 212, 0.15), inset 0 1px 0 rgba(0,245,212,0.08);
+    }
+    .puzzle-theme:hover {
+      border-color: rgba(0, 245, 212, 0.7);
+      box-shadow: 0 0 32px rgba(0, 245, 212, 0.35), inset 0 1px 0 rgba(0,245,212,0.12);
+      transform: translateY(-4px);
+    }
+    .puzzle-theme .game-name {
+      color: #00f5d4;
+      text-shadow: 0 0 10px rgba(0, 245, 212, 0.5);
+    }
+    .puzzle-theme .btn-enter-game {
+      background: linear-gradient(135deg, #00f5d4, #7c3aed);
+      color: #04050f;
+      font-weight: 700;
+    }
+    .puzzle-theme .game-badge {
+      background: linear-gradient(135deg, #00f5d4, #7c3aed);
+      color: #04050f;
+    }
+  </style>
+</head>
+<body>
+
+<div class="stars" id="portal-stars"></div>
+
+<div class="portal-container">
+  <!-- 頂部 Logo 區塊 -->
+  <div class="portal-header">
+    <div class="brand-logo-wrap">
+      <img src="STK-20260402-WA0016.png" alt="E家大小事" class="brand-logo">
+    </div>
+    <h1 class="brand-title">E家大小事</h1>
+    <p class="brand-subtitle">🎮 兒童玩住學中心 🎮</p>
+  </div>
+
+  <!-- 遊戲選擇選單 -->
+  <div class="games-grid">
+
+    <!-- 遊戲 1: 乘法神速賽 -->
+    <a href="./puzzle-math/index.html" class="game-card puzzle-theme">
+      <div class="game-badge new-badge">NEW</div>
+      <div class="game-icon">✖️</div>
+      <div class="game-details">
+        <h2 class="game-name">乘法神速賽</h2>
+        <p class="game-desc">極速乘法直覺訓練！每累積 20 分解鎖一格拼圖，共 10 幅星際圖鑑等你揭開！</p>
+        <span class="btn-enter-game">立即出發 ➔</span>
+      </div>
+    </a>
+
+    <!-- 遊戲 2: 寶可夢數感訓練所（暫時隱藏）
+    <a href="./pokemon-math/index.html" class="game-card pokemon-theme">
+      <div class="game-badge">HOT</div>
+      <div class="game-icon">⚡</div>
+      <div class="game-details">
+        <h2 class="game-name">寶可夢心算訓練所</h2>
+        <p class="game-desc">100%進退位心算速擊！解鎖 151 隻第一代寶可夢全圖鑑，與寶可夢一同出戰！</p>
+        <span class="btn-enter-game">立即出發 ➔</span>
+      </div>
+    </a>
+    -->
+
+    <!-- 遊戲 3: 伊布分數小數互化研究所（暫時隱藏）
+    <a href="./eevee-math/index.html" class="game-card eevee-theme">
+      <div class="game-badge new-badge">NEW</div>
+      <div class="game-icon">🌟</div>
+      <div class="game-details">
+        <h2 class="game-name">伊布分數小數互化研究所</h2>
+        <p class="game-desc">挑戰小數分數互化，解鎖伊布的各種進化形態！</p>
+        <span class="btn-enter-game">立即出發 ➔</span>
+      </div>
+    </a>
+    -->
+
+  </div>
+</div>
+
+<script>
+  // 簡單的大廳背景星星特效
+  const container = document.getElementById('portal-stars');
+  for (let i = 0; i < 30; i++) {
+    const star = document.createElement('div');
+    star.className = 'star';
+    const size = Math.random() * 2 + 1;
+    star.style.cssText = `
+      position: absolute;
+      background: white;
+      border-radius: 50%;
+      width: ${size}px;
+      height: ${size}px;
+      left: ${Math.random() * 100}%;
+      top: ${Math.random() * 100}%;
+      opacity: ${Math.random() * 0.6 + 0.2};
+    `;
+    container.appendChild(star);
+  }
+</script>
+</body>
+</html>
