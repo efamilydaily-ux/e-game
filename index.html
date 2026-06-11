@@ -91,6 +91,54 @@
     `;
     container.appendChild(star);
   }
+
+  // 🔊 遊戲按鈕音效
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  function playLaunchSound() {
+    // 上升音調：模擬「出發！」的感覺
+    const times = [0, 0.08, 0.16, 0.24];
+    const freqs = [330, 440, 550, 660];
+    times.forEach((t, i) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(freqs[i], audioCtx.currentTime + t);
+      gain.gain.setValueAtTime(0.18, audioCtx.currentTime + t);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + t + 0.12);
+      osc.start(audioCtx.currentTime + t);
+      osc.stop(audioCtx.currentTime + t + 0.13);
+    });
+  }
+
+  function playLockedSound() {
+    // 低沉單音：表示未解鎖
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+    osc.frequency.linearRampToValueAtTime(100, audioCtx.currentTime + 0.2);
+    gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.25);
+    osc.start(audioCtx.currentTime);
+    osc.stop(audioCtx.currentTime + 0.26);
+  }
+
+  // 綁定遊戲卡音效
+  document.querySelectorAll('.game-card').forEach(card => {
+    card.addEventListener('click', () => {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      if (card.classList.contains('coming-soon')) {
+        playLockedSound();
+      } else {
+        playLaunchSound();
+      }
+    });
+  });
 </script>
 </body>
 </html>
