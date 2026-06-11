@@ -46,6 +46,9 @@ export function createDefaultGameData() {
     })),
     currentPuzzleIndex: 0,
     errorTracker: {},
+    // Key of the replay question currently in-flight (set by processAnswer,
+    // read by getDueReplayQuestion to avoid re-issuing the same slot)
+    pendingReplayKey: null,
   };
 }
 
@@ -63,23 +66,32 @@ export function createDefaultGameData() {
  * @param {number} answeredCount
  * @param {object|null} lastQuestion – skips same-as-last to prevent consecutive repeat
  */
-export function getDueReplayQuestion(errorTracker, answeredCount, lastQuestion = null) {
+/**
+ * PURE READ — never mutates errorTracker.
+ * Returns { key, a, b, answer } for the first due replay, or null.
+ *
+ * @param {object}      errorTracker
+ * @param {number}      answeredCount
+ * @param {string|null} pendingReplayKey  – key already in-flight, skip it
+ * @param {object|null} lastQuestion      – skip if same as previous (no back-to-back repeat)
+ */
+export function getDueReplayQuestion(
+  errorTracker,
+  answeredCount,
+  pendingReplayKey = null,
+  lastQuestion = null,
+) {
   for (const key of Object.keys(errorTracker)) {
+    // This slot is already issued and awaiting an answer
+    if (key === pendingReplayKey) continue;
+
     const entry = errorTracker[key];
-
-    // Already reserved for the current question slot — cannot fire again
-    if (entry.pendingAt != null) continue;
-
     if (!entry.replayAt || entry.replayAt.length === 0) continue;
 
     const nextAt = entry.replayAt[0];
     if (answeredCount >= nextAt) {
-      // Skip if identical to the last question (prevents consecutive duplicate)
       if (lastQuestion && lastQuestion.a === entry.a && lastQuestion.b === entry.b) continue;
-
-      // Consume checkpoint NOW → pendingAt, so same slot never fires twice
-      entry.pendingAt = entry.replayAt.shift();
-      return { a: entry.a, b: entry.b, answer: entry.a * entry.b };
+      return { key, a: entry.a, b: entry.b, answer: entry.a * entry.b };
     }
   }
   return null;
@@ -95,27 +107,37 @@ export function getDueReplayQuestion(errorTracker, answeredCount, lastQuestion =
  * @param {object|null} lastQuestion
  * @returns {{ a, b, answer, isReplay }}
  */
-export function generateQuestion(errorTracker = {}, answeredCount = 0, lastQuestion = null) {
-  const dueReplay = getDueReplayQuestion(errorTracker, answeredCount, lastQuestion);
-  if (dueReplay) {
-    return { ...dueReplay, isReplay: true };
+/**
+ * PURE READ — never mutates any state.
+ * Returns the next question. replayKey is non-null when a replay is issued;
+ * pass it to processAnswer so it can record pendingReplayKey in gameData.
+ *
+ * @param {object}      errorTracker
+ * @param {number}      answeredCount
+ * @param {string|null} pendingReplayKey
+ * @param {object|null} lastQuestion
+ * @returns {{ a, b, answer, isReplay, replayKey: string|null }}
+ */
+export function generateQuestion(
+  errorTracker = {},
+  answeredCount = 0,
+  pendingReplayKey = null,
+  lastQuestion = null,
+) {
+  const due = getDueReplayQuestion(errorTracker, answeredCount, pendingReplayKey, lastQuestion);
+  if (due) {
+    return { a: due.a, b: due.b, answer: due.answer, isReplay: true, replayKey: due.key };
   }
 
   const { DIGITS } = GAME_CONFIG;
   let a, b, attempts = 0;
-
   do {
     a = DIGITS[Math.floor(Math.random() * DIGITS.length)];
     b = DIGITS[Math.floor(Math.random() * DIGITS.length)];
     attempts++;
-  } while (
-    lastQuestion &&
-    lastQuestion.a === a &&
-    lastQuestion.b === b &&
-    attempts < 20
-  );
+  } while (lastQuestion && lastQuestion.a === a && lastQuestion.b === b && attempts < 20);
 
-  return { a, b, answer: a * b, isReplay: false };
+  return { a, b, answer: a * b, isReplay: false, replayKey: null };
 }
 
 // ─── Scoring ──────────────────────────────────────────────────────────────────
@@ -159,14 +181,14 @@ export function processAnswer(gameData, question, playerAnswer) {
     pointsEarned = calcPoints(next.combo - 1);
     next.totalScore += pointsEarned;
 
-    // Mark replay as done: consume pendingAt → replayed[]
-    if (question.isReplay && next.errorTracker[key]) {
-      const entry = next.errorTracker[key];
-      if (entry.pendingAt != null) {
-        entry.replayed.push(entry.pendingAt);
-        entry.pendingAt = null;
+    // Replay answered correctly: shift the triggered checkpoint → replayed[]
+    if (question.isReplay && question.replayKey && next.errorTracker[question.replayKey]) {
+      const entry = next.errorTracker[question.replayKey];
+      if (entry.replayAt.length > 0) {
+        entry.replayed.push(entry.replayAt.shift());
       }
     }
+    next.pendingReplayKey = null;  // slot answered, clear in-flight marker
 
     // Calculate puzzle unlocks
     newUnlocks = applyScoreToPuzzle(next);
@@ -174,33 +196,19 @@ export function processAnswer(gameData, question, playerAnswer) {
     next.combo = 0;
     next.wrongCount += 1;
 
-    // Register / update error tracker (FIFO)
-    // replayAt stores ABSOLUTE thresholds = answeredCount + offset
-    // so the question re-appears exactly 5, 10, 20 answers after the mistake.
-    const offsets = GAME_CONFIG.ERROR_REPLAY_AT; // [5, 10, 20]
+    // Record wrong answer with RELATIVE checkpoints:
+    //   replay at answeredCount + 5, + 10, + 20 from THIS mistake.
+    // If the same question was wrong before, RESET its queue entirely —
+    //   "re-count from this wrong answer" as per spec.
+    const checkpoints = GAME_CONFIG.ERROR_REPLAY_AT.map(o => next.answeredCount + o);
     if (!next.errorTracker[key]) {
-      next.errorTracker[key] = {
-        a, b,
-        replayAt: offsets.map(o => next.answeredCount + o),
-        replayed: [],
-        pendingAt: null,
-      };
+      next.errorTracker[key] = { a, b, replayAt: checkpoints, replayed: [] };
     } else {
-      const existingEntry = next.errorTracker[key];
-      // If a replay was in-flight (pending) when answered wrong, return it to queue
-      if (existingEntry.pendingAt != null) {
-        existingEntry.replayAt.unshift(existingEntry.pendingAt);
-        existingEntry.pendingAt = null;
-      }
-      // Add any missing relative checkpoints (fresh from this wrong answer)
-      offsets.forEach(o => {
-        const abs = next.answeredCount + o;
-        if (!existingEntry.replayAt.includes(abs)) {
-          existingEntry.replayAt.push(abs);
-        }
-      });
-      existingEntry.replayAt.sort((x, y) => x - y);
+      // Reset: discard old queue, start fresh from now
+      next.errorTracker[key].replayAt = checkpoints;
+      next.errorTracker[key].replayed = [];
     }
+    next.pendingReplayKey = null;  // clear any in-flight marker
   }
 
   return { gameData: next, correct, pointsEarned, newUnlocks };

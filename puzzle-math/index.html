@@ -95,28 +95,29 @@
         })),
         currentPuzzleIndex: 0,
         errorTracker: {},
+        pendingReplayKey: null,
       };
     }
 
-    // ── 錯題複習出題（pendingAt + 相對 checkpoint 機制）────────────
-    function getDueReplayQuestion(errorTracker, answeredCount, lastQuestion) {
+    // ── 復習出題：純讀取，不 mutate errorTracker ─────────────────
+    // pendingReplayKey 存於 gameData，只有 processAnswer 可以寫入
+    function getDueReplayQuestion(errorTracker, answeredCount, pendingReplayKey, lastQuestion) {
       for (const key of Object.keys(errorTracker)) {
+        if (key === pendingReplayKey) continue;  // 已出題中，跳過
         const entry = errorTracker[key];
-        if (entry.pendingAt != null) continue;          // 已預留，跳過
         if (!entry.replayAt || entry.replayAt.length === 0) continue;
         const nextAt = entry.replayAt[0];
         if (answeredCount >= nextAt) {
           if (lastQuestion && lastQuestion.a === entry.a && lastQuestion.b === entry.b) continue;
-          entry.pendingAt = entry.replayAt.shift();     // 立即消耗，防重複觸發
-          return { a: entry.a, b: entry.b, answer: entry.a * entry.b };
+          return { key, a: entry.a, b: entry.b, answer: entry.a * entry.b };
         }
       }
       return null;
     }
 
-    function generateQuestion(errorTracker = {}, answeredCount = 0, lastQuestion = null) {
-      const due = getDueReplayQuestion(errorTracker, answeredCount, lastQuestion);
-      if (due) return { ...due, isReplay: true };
+    function generateQuestion(errorTracker = {}, answeredCount = 0, pendingReplayKey = null, lastQuestion = null) {
+      const due = getDueReplayQuestion(errorTracker, answeredCount, pendingReplayKey, lastQuestion);
+      if (due) return { a: due.a, b: due.b, answer: due.answer, isReplay: true, replayKey: due.key };
       const { DIGITS } = GAME_CONFIG;
       let a, b, attempts = 0;
       do {
@@ -124,7 +125,7 @@
         b = DIGITS[Math.floor(Math.random() * DIGITS.length)];
         attempts++;
       } while (lastQuestion && lastQuestion.a === a && lastQuestion.b === b && attempts < 20);
-      return { a, b, answer: a * b, isReplay: false };
+      return { a, b, answer: a * b, isReplay: false, replayKey: null };
     }
 
     function calcPoints(combo) {
@@ -182,41 +183,26 @@
         next.correctCount += 1;
         pointsEarned = calcPoints(next.combo - 1);
         next.totalScore += pointsEarned;
-        // 複習答對 → 消耗 pendingAt，記入 replayed
-        if (question.isReplay && next.errorTracker[key]) {
-          const e = next.errorTracker[key];
-          if (e.pendingAt != null) {
-            e.replayed.push(e.pendingAt);
-            e.pendingAt = null;
-          }
+        // 複習答對：shift checkpoint → replayed[]，清除 pendingReplayKey
+        if (question.isReplay && question.replayKey && next.errorTracker[question.replayKey]) {
+          const entry = next.errorTracker[question.replayKey];
+          if (entry.replayAt.length > 0) entry.replayed.push(entry.replayAt.shift());
         }
+        next.pendingReplayKey = null;
         newUnlocks = applyScoreToPuzzle(next);
       } else {
         next.combo = 0;
         next.wrongCount += 1;
-        // 記錄錯題：用相對 checkpoint（答錯後 +5/+10/+20 題才復習）
-        const offsets = GAME_CONFIG.ERROR_REPLAY_AT;
+        // 記錄錯題：相對 checkpoint（答錯後 +5/+10/+20 題才出）
+        // 若同一題再次答錯，從本次重新起算（reset queue）
+        const checkpoints = GAME_CONFIG.ERROR_REPLAY_AT.map(o => next.answeredCount + o);
         if (!next.errorTracker[key]) {
-          next.errorTracker[key] = {
-            a, b,
-            replayAt: offsets.map(o => next.answeredCount + o),
-            replayed: [],
-            pendingAt: null,
-          };
+          next.errorTracker[key] = { a, b, replayAt: checkpoints, replayed: [] };
         } else {
-          const e = next.errorTracker[key];
-          // 若有 pending 中的復習題答錯了，放回隊列前端
-          if (e.pendingAt != null) {
-            e.replayAt.unshift(e.pendingAt);
-            e.pendingAt = null;
-          }
-          // 補充從本次答錯起算的新 checkpoint
-          offsets.forEach(o => {
-            const abs = next.answeredCount + o;
-            if (!e.replayAt.includes(abs)) e.replayAt.push(abs);
-          });
-          e.replayAt.sort((x, y) => x - y);
+          next.errorTracker[key].replayAt = checkpoints;
+          next.errorTracker[key].replayed = [];
         }
+        next.pendingReplayKey = null;
       }
       return { gameData: next, correct, pointsEarned, newUnlocks };
     }
@@ -369,23 +355,19 @@
                   )
                 )
           ),
-          // 已解鎖照片 — 固定顯示全部 10 張（含未解鎖佔位）
+          // 解鎖照片：只有 p.completed（12/12格全解鎖）才顯示圖片，其餘一律 🔒
           e('div', { className: 'menu-panel' },
             e('h2', { className: 'panel-title' }, '🖼 解鎖照片'),
             e('div', { className: 'photo-grid' },
               ...Array.from({ length: GAME_CONFIG.TOTAL_PUZZLES }, (_, i) => {
                 const p = gameData.puzzles[i];
-                const unlocked = p.unlockedIndices.length > 0;
                 return e('div', { key: i, className: 'photo-thumb-wrap' },
-                  unlocked
+                  p.completed
                     ? e('div', {
-                        className: `photo-thumb${p.completed ? ' completed' : ''}`,
+                        className: 'photo-thumb completed',
                         style: { backgroundImage: `url(images/puzzle_${i}.png)` }
                       },
-                        p.completed
-                          ? e('div', { className: 'photo-thumb-done' }, '✓')
-                          : e('div', { className: 'photo-thumb-overlay' },
-                              `${p.unlockedIndices.length}/${GAME_CONFIG.CELLS_PER_PUZZLE}`)
+                        e('div', { className: 'photo-thumb-done' }, '✓')
                       )
                     : e('div', { className: 'photo-thumb locked' },
                         e('span', { className: 'photo-lock-icon' }, '🔒')
@@ -470,7 +452,14 @@
       useEffect(() => { lockedRef.current   = locked;   }, [locked]);
 
       const loadQuestion = useCallback((data, last = null) => {
-        const q = generateQuestion(data.errorTracker, data.answeredCount, last);
+        const q = generateQuestion(
+          data.errorTracker,
+          data.answeredCount,
+          data.pendingReplayKey ?? null,
+          last,
+        );
+        // Record which replay is now in-flight so processAnswer can clear it
+        if (q.replayKey) data.pendingReplayKey = q.replayKey;
         setQuestion(q);
         setOptions(generateOptions(q.answer));
         setFeedback(null);
