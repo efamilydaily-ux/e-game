@@ -52,28 +52,32 @@ export function createDefaultGameData() {
 // ─── Question generation ──────────────────────────────────────────────────────
 
 /**
- * Returns the first error question due for replay at the current answeredCount,
- * or null if none.
+ * Returns the first error question due for replay, consuming its checkpoint
+ * immediately (pendingAt) so it cannot fire again until answered.
  *
- * @param {object} errorTracker
+ * replayAt stores ABSOLUTE answeredCount thresholds calculated at wrong-answer
+ * time as (wrongAnsweredCount + 5/10/20), so they fire exactly 5, 10, 20
+ * questions after the mistake — not from game start.
+ *
+ * @param {object} errorTracker  – mutated in place (pendingAt reservation)
  * @param {number} answeredCount
- * @param {object|null} lastQuestion – skips if it would produce a consecutive duplicate
+ * @param {object|null} lastQuestion – skips same-as-last to prevent consecutive repeat
  */
 export function getDueReplayQuestion(errorTracker, answeredCount, lastQuestion = null) {
   for (const key of Object.keys(errorTracker)) {
     const entry = errorTracker[key];
 
-    // Already reserved for the current question cycle — skip to prevent repeat
+    // Already reserved for the current question slot — cannot fire again
     if (entry.pendingAt != null) continue;
 
     if (!entry.replayAt || entry.replayAt.length === 0) continue;
 
-    const nextReplayAt = entry.replayAt[0];
-    if (answeredCount >= nextReplayAt) {
-      // Skip if it would be identical to the last question
+    const nextAt = entry.replayAt[0];
+    if (answeredCount >= nextAt) {
+      // Skip if identical to the last question (prevents consecutive duplicate)
       if (lastQuestion && lastQuestion.a === entry.a && lastQuestion.b === entry.b) continue;
 
-      // Reserve this checkpoint now — prevents re-triggering before player answers
+      // Consume checkpoint NOW → pendingAt, so same slot never fires twice
       entry.pendingAt = entry.replayAt.shift();
       return { a: entry.a, b: entry.b, answer: entry.a * entry.b };
     }
@@ -82,17 +86,16 @@ export function getDueReplayQuestion(errorTracker, answeredCount, lastQuestion =
 }
 
 /**
- * Generate a random multiplication question.
- * Avoids factor 1; picks from DIGITS (2-9).
- * Ensures the new question is not identical to lastQuestion.
+ * Generate the next question.
+ * Replay queue is checked first; falls back to a fresh random question
+ * that is guaranteed not to be identical to lastQuestion.
  *
- * @param {object} errorTracker
+ * @param {object} errorTracker  – may be mutated (pendingAt reservation)
  * @param {number} answeredCount
- * @param {object|null} lastQuestion – the previous question; avoids consecutive repeat
- * @returns {{ a: number, b: number, answer: number, isReplay: boolean }}
+ * @param {object|null} lastQuestion
+ * @returns {{ a, b, answer, isReplay }}
  */
 export function generateQuestion(errorTracker = {}, answeredCount = 0, lastQuestion = null) {
-  // Check replay queue first (skips same-as-last automatically)
   const dueReplay = getDueReplayQuestion(errorTracker, answeredCount, lastQuestion);
   if (dueReplay) {
     return { ...dueReplay, isReplay: true };
@@ -101,7 +104,6 @@ export function generateQuestion(errorTracker = {}, answeredCount = 0, lastQuest
   const { DIGITS } = GAME_CONFIG;
   let a, b, attempts = 0;
 
-  // Retry up to 20 times to avoid producing the same question as last time
   do {
     a = DIGITS[Math.floor(Math.random() * DIGITS.length)];
     b = DIGITS[Math.floor(Math.random() * DIGITS.length)];
@@ -157,7 +159,7 @@ export function processAnswer(gameData, question, playerAnswer) {
     pointsEarned = calcPoints(next.combo - 1);
     next.totalScore += pointsEarned;
 
-    // Mark replay as done: consume pendingAt → replayed
+    // Mark replay as done: consume pendingAt → replayed[]
     if (question.isReplay && next.errorTracker[key]) {
       const entry = next.errorTracker[key];
       if (entry.pendingAt != null) {
@@ -173,29 +175,31 @@ export function processAnswer(gameData, question, playerAnswer) {
     next.wrongCount += 1;
 
     // Register / update error tracker (FIFO)
+    // replayAt stores ABSOLUTE thresholds = answeredCount + offset
+    // so the question re-appears exactly 5, 10, 20 answers after the mistake.
+    const offsets = GAME_CONFIG.ERROR_REPLAY_AT; // [5, 10, 20]
     if (!next.errorTracker[key]) {
       next.errorTracker[key] = {
         a, b,
-        replayAt: [...GAME_CONFIG.ERROR_REPLAY_AT],
+        replayAt: offsets.map(o => next.answeredCount + o),
         replayed: [],
         pendingAt: null,
       };
     } else {
       const existingEntry = next.errorTracker[key];
-      // If a replay was pending (player answered wrong again), put it back at front
+      // If a replay was in-flight (pending) when answered wrong, return it to queue
       if (existingEntry.pendingAt != null) {
         existingEntry.replayAt.unshift(existingEntry.pendingAt);
         existingEntry.pendingAt = null;
       }
-      GAME_CONFIG.ERROR_REPLAY_AT.forEach(checkpoint => {
-        if (
-          !existingEntry.replayAt.includes(checkpoint) &&
-          !existingEntry.replayed.includes(checkpoint)
-        ) {
-          existingEntry.replayAt.push(checkpoint);
+      // Add any missing relative checkpoints (fresh from this wrong answer)
+      offsets.forEach(o => {
+        const abs = next.answeredCount + o;
+        if (!existingEntry.replayAt.includes(abs)) {
+          existingEntry.replayAt.push(abs);
         }
       });
-      existingEntry.replayAt.sort((a, b) => a - b);
+      existingEntry.replayAt.sort((x, y) => x - y);
     }
   }
 
