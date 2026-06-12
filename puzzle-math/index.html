@@ -408,6 +408,22 @@
     }
 
     // ════════════════════════════════════════════════════════════
+    //  CompletedPuzzlePreview — full image shown for 3 s after unlock
+    // ════════════════════════════════════════════════════════════
+    function CompletedPuzzlePreview({ puzzleIndex }) {
+      return e('div', { className: 'completed-preview-overlay' },
+        e('div', { className: 'completed-preview-inner' },
+          e('div', { className: 'completed-preview-label' }, '🎉 拼圖解鎖！'),
+          e('img', {
+            className: 'completed-preview-img',
+            src: `images/puzzle_${puzzleIndex}.png`,
+            alt: `puzzle ${puzzleIndex + 1}`,
+          })
+        )
+      );
+    }
+
+    // ════════════════════════════════════════════════════════════
     //  CongratsOverlay
     // ════════════════════════════════════════════════════════════
     function CongratsOverlay({ puzzleIndex, onNext, onMenu, onKeepPlaying }) {
@@ -443,6 +459,9 @@
       const [locked,  setLocked]                = useState(false);
       const [newlyUnlocked, setNewlyUnlocked]   = useState(new Set());
       const [showCongrats, setShowCongrats]     = useState(false);
+      // completedPuzzleIdx: index of the puzzle just finished (-1 = none)
+      // shows the full image for 3s before CongratsOverlay appears
+      const [completedPuzzleIdx, setCompletedPuzzleIdx] = useState(-1);
 
       const gameDataRef = useRef(initialData);
       const questionRef = useRef(null);
@@ -508,7 +527,13 @@
 
         if (justCompleted) {
           playSound('snd-complete');
-          setTimeout(() => setShowCongrats(true), 1500);  // 1.5 s 緩衝
+          // Step 1: show the fully revealed puzzle image for 3 s
+          setCompletedPuzzleIdx(prevIdx);
+          // Step 2: after 3 s, hide the image preview and show CongratsOverlay
+          setTimeout(() => {
+            setCompletedPuzzleIdx(-1);
+            setShowCongrats(true);
+          }, 3000);
           return;
         }
 
@@ -593,12 +618,16 @@
         // Feedback
         feedback ? e('div', { className: `feedback-flash ${feedback}` },
           feedback === 'correct' ? '✓ 正確！' : '✗ 再加油！') : null,
-        // Congrats
+        // Full image preview (3 s) after puzzle complete
+        completedPuzzleIdx >= 0
+          ? e(CompletedPuzzlePreview, { puzzleIndex: completedPuzzleIdx })
+          : null,
+        // Congrats overlay (appears after image preview)
         showCongrats ? e(CongratsOverlay, {
           puzzleIndex: pidx,
           onNext: handleContinue,
           onMenu: onExit,
-          onKeepPlaying: handleContinue,   // 全部完成後繼續出題，不再解鎖
+          onKeepPlaying: handleContinue,
         }) : null
       );
     }
