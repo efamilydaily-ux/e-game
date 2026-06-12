@@ -20,6 +20,8 @@
   <audio id="snd-complete" src="https://assets.mixkit.co/active_storage/sfx/1993/1993-preview.mp3" preload="auto"></audio>
   <!-- login: soft confirmation chime -->
   <audio id="snd-login"    src="https://assets.mixkit.co/active_storage/sfx/2867/2867-preview.mp3" preload="auto"></audio>
+  <!-- start game: countdown/launch beep -->
+  <audio id="snd-start"    src="https://assets.mixkit.co/active_storage/sfx/2997/2997-preview.mp3" preload="auto"></audio>
 </head>
 <body>
   <!-- ══ Star-field canvas ══════════════════════════════════════ -->
@@ -644,7 +646,7 @@
       });
       if (page === PAGE.MENU)  return e(MainMenu, {
         gameData,
-        onStartGame: () => setPage(PAGE.GAME),
+        onStartGame: () => { playSound('snd-start'); setPage(PAGE.GAME); },
       });
       if (page === PAGE.GAME)  return e(GameScreen, {
         gameData,
