@@ -28,7 +28,7 @@ export const GAME_CONFIG = {
  * Predefined unlock order for a 12-cell puzzle.
  * Centre (5) is always the very last slot.
  */
-export const UNLOCK_ORDER = [0, 4, 8, 1, 7, 6, 11, 10, 3, 2, 9, 5];
+export const UNLOCK_ORDER = [0, 3, 8, 1, 7, 6, 11, 10, 4, 2, 9, 5];
 
 // ─── Default game state ───────────────────────────────────────────────────────
 
