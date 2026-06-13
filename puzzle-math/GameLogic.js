@@ -231,6 +231,10 @@ export function applyScoreToPuzzle(gameData) {
   const totalCellsEarned = Math.floor(totalScore / GAME_CONFIG.POINTS_PER_20);
   const newUnlocks = [];
 
+  // Snapshot active puzzle index BEFORE any advance,
+  // so newUnlocks always refers to the puzzle the player is currently viewing.
+  const activePuzzleIdx = gameData.currentPuzzleIndex;
+
   let remaining = totalCellsEarned;
 
   for (let pi = 0; pi < puzzles.length; pi++) {
@@ -242,7 +246,8 @@ export function applyScoreToPuzzle(gameData) {
     targetUnlocked.forEach(idx => {
       if (!alreadyUnlocked.has(idx)) {
         puzzle.unlockedIndices.push(idx);
-        if (pi === gameData.currentPuzzleIndex) {
+        // Animate only cells on the puzzle that was active when this answer was given
+        if (pi === activePuzzleIdx) {
           newUnlocks.push(idx);
         }
       }
@@ -258,7 +263,7 @@ export function applyScoreToPuzzle(gameData) {
     if (remaining <= 0) break;
   }
 
-  // Only advance index if there is a next puzzle
+  // Advance to next puzzle AFTER newUnlocks has been recorded
   if (
     puzzles[gameData.currentPuzzleIndex]?.completed &&
     gameData.currentPuzzleIndex < GAME_CONFIG.TOTAL_PUZZLES - 1

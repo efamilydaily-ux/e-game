@@ -86,7 +86,7 @@
       CENTRE_INDEX: 5,
       ERROR_REPLAY_AT: [5, 10, 20],
     };
-    const UNLOCK_ORDER = [0,11,2,10,4,6,7,1,9,3,8,5];
+    const UNLOCK_ORDER = [0,1,2,3,4,6,7,8,9,10,11,5];
 
     function createDefaultGameData() {
       return {
@@ -143,6 +143,11 @@
 
       const newUnlocks = [];
       const totalCellsEarned = Math.floor(gameData.totalScore / GAME_CONFIG.POINTS_PER_20);
+
+      // Snapshot BEFORE any advance — ensures newUnlocks maps to the puzzle
+      // the player is currently viewing, not the one we're about to switch to
+      const activePuzzleIdx = gameData.currentPuzzleIndex;
+
       let remaining = totalCellsEarned;
       for (let pi = 0; pi < gameData.puzzles.length; pi++) {
         const puzzle = gameData.puzzles[pi];
@@ -152,7 +157,7 @@
         targetUnlocked.forEach(idx => {
           if (!already.has(idx)) {
             puzzle.unlockedIndices.push(idx);
-            if (pi === gameData.currentPuzzleIndex) newUnlocks.push(idx);
+            if (pi === activePuzzleIdx) newUnlocks.push(idx);
           }
         });
         puzzle.unlockedIndices.sort((a, b) =>
@@ -161,7 +166,7 @@
         remaining -= GAME_CONFIG.CELLS_PER_PUZZLE;
         if (remaining <= 0) break;
       }
-      // 只在還有下一張時才推進 currentPuzzleIndex
+      // Advance AFTER newUnlocks recorded
       if (
         gameData.puzzles[gameData.currentPuzzleIndex]?.completed &&
         gameData.currentPuzzleIndex < GAME_CONFIG.TOTAL_PUZZLES - 1
