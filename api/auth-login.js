@@ -16,7 +16,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ success: false, message: '請輸入完整的名字與密碼！' });
   }
 
-  // 2. 用戶名長度驗證：最少 4 個字元
+  // 2. 用戶名長度驗證：最少 4 個字元（新帳號另有更嚴格規則）
   if (trainerName.trim().length < 4) {
     return res.status(400).json({ success: false, message: '訓練師名字不能少於 4 個字元！' });
   }
@@ -35,6 +35,16 @@ export default async function handler(req, res) {
 
     if (!account) {
       // ======= 找不到帳號 ➡️ 自動註冊建立帳號 =======
+
+      // 新帳號額外規則：最少 6 個字元
+      if (cleanName.length < 6) {
+        return res.status(400).json({ success: false, message: '新帳號的訓練師名字不能少於 6 個字元！' });
+      }
+      // 新帳號額外規則：只允許英數字及底線 _
+      if (!/^[a-zA-Z0-9_]+$/.test(cleanName)) {
+        return res.status(400).json({ success: false, message: '訓練師名字只能包含英文字母、數字及底線 _，不能有其他特殊符號！' });
+      }
+
       const mockToken = `token_${Math.random().toString(36).substring(2)}_${Date.now()}`;
       account = {
         username: cleanName,
