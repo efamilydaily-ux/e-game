@@ -269,7 +269,7 @@ class UIManager {
       const currentScore = this.session.data.scores[eevee.id] || 0;
       card.innerHTML = `
         <img class="eevee-pick-sprite" src="${eevee.img}" alt="${eevee.name}" loading="lazy"
-          onerror="this.style.fontSize='40px'; this.style.width='80px'; this.style.height='80px'; this.style.display='flex'; this.style.alignItems='center'; this.style.justifyContent='center'; this.outerHTML='<div style=\\"font-size:40px;width:80px;height:80px;display:flex;align-items:center;justify-content:center;\\">${eevee.emoji}</div>'">
+          onerror="this.style.fontSize='40px'; this.style.width='80px'; this.style.height='80px'; this.style.display='flex'; this.style.alignItems='center'; this.style.justifyContent='center'; this.outerHTML='<div style=\\"font-size:40px;width:80px;height:80px;display:flex;align-items:center;justify-content:center;\\"></div>
         <div class="eevee-pick-name">${eevee.emoji} ${eevee.name}</div>
         <div class="eevee-pick-score-needed">${unlocked ? '✅ 已解鎖' : `目標：${eevee.needed} 分`}</div>
         ${!unlocked ? `<div class="eevee-pick-badge badge-${eevee.badge}">${currentScore} / ${eevee.needed}</div>` : ''}
