@@ -8,14 +8,14 @@
    圖片路徑：images/capy_<id>.png
    ---------------------------------------------------------- */
 const EEVEE_EVOLUTIONS = [
-  { id: 'capy_classic',   name: '原味卡比',   zhName: '原味卡比巴拉',   needed: 300, emoji: '🌿', color: '#7aaa5a', badge: '300', img: 'images/capy_classic.png'  },
-  { id: 'capy_water',     name: '泡澡卡比',   zhName: '泡澡卡比巴拉',   needed: 300, emoji: '💧', color: '#4070e8', badge: '300', img: 'images/capy_water.png'    },
-  { id: 'capy_flower',    name: '花冠卡比',   zhName: '花冠卡比巴拉',   needed: 300, emoji: '🌸', color: '#e860a0', badge: '300', img: 'images/capy_flower.png'   },
-  { id: 'capy_fruit',     name: '水果卡比',   zhName: '水果卡比巴拉',   needed: 400, emoji: '🍊', color: '#e8a800', badge: '400', img: 'images/capy_fruit.png'    },
-  { id: 'capy_hat',       name: '帽子卡比',   zhName: '帽子卡比巴拉',   needed: 400, emoji: '🎩', color: '#9060e8', badge: '400', img: 'images/capy_hat.png'      },
-  { id: 'capy_snow',      name: '雪地卡比',   zhName: '雪地卡比巴拉',   needed: 500, emoji: '❄️', color: '#60c0e8', badge: '500', img: 'images/capy_snow.png'     },
-  { id: 'capy_rainbow',   name: '彩虹卡比',   zhName: '彩虹卡比巴拉',   needed: 500, emoji: '🌈', color: '#e84040', badge: '500', img: 'images/capy_rainbow.png'  },
-  { id: 'capy_golden',    name: '黃金卡比',   zhName: '黃金卡比巴拉',   needed: 600, emoji: '⭐', color: '#c8a800', badge: '600', img: 'images/capy_golden.png'   },
+  { id: 'capy_eat',      name: '吃喝卡比',   zhName: '吃喝卡比巴拉',   needed: 300, emoji: '🍔', color: '#e8a800', badge: '300', img: 'images/capy_eat.png'      },
+  { id: 'capy_dance',    name: '街舞卡比',   zhName: '街舞卡比巴拉',   needed: 300, emoji: '🕺', color: '#e860a0', badge: '300', img: 'images/capy_dance.png'    },
+  { id: 'capy_doctor',   name: '博士卡比',   zhName: '博士卡比巴拉',   needed: 300, emoji: '🎓', color: '#4070e8', badge: '300', img: 'images/capy_doctor.png'   },
+  { id: 'capy_hawaii',   name: '夏威夷卡比', zhName: '夏威夷卡比巴拉', needed: 400, emoji: '🌺', color: '#e84040', badge: '400', img: 'images/capy_hawaii.png'   },
+  { id: 'capy_boss',     name: '總裁卡比',   zhName: '總裁卡比巴拉',   needed: 400, emoji: '💼', color: '#9060e8', badge: '400', img: 'images/capy_boss.png'     },
+  { id: 'capy_ski',      name: '滑雪卡比',   zhName: '滑雪卡比巴拉',   needed: 500, emoji: '⛷️', color: '#60c0e8', badge: '500', img: 'images/capy_ski.png'      },
+  { id: 'capy_travel',   name: '旅行卡比',   zhName: '旅行卡比巴拉',   needed: 500, emoji: '✈️', color: '#7aaa5a', badge: '500', img: 'images/capy_travel.png'   },
+  { id: 'capy_rich',     name: '富翁卡比',   zhName: '富翁卡比巴拉',   needed: 600, emoji: '💰', color: '#c8a800', badge: '600', img: 'images/capy_rich.png'     },
 ];
 
 const GAME_ID = 'capy_math';
