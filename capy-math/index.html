@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>卡比巴拉分數小數互化研究所</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ===== 背景裝飾粒子 ===== -->
+<div class="bg-particles" id="bg-particles"></div>
+
+<!-- ===== 音效 ===== -->
+<audio id="snd-correct" src="https://cdn.freesound.org/previews/341/341695_5858296-lq.mp3" preload="auto"></audio>
+<audio id="snd-wrong"   src="https://cdn.freesound.org/previews/142/142608_1840739-lq.mp3" preload="auto"></audio>
+<audio id="snd-evolve"  src="https://cdn.freesound.org/previews/456/456966_9337928-lq.mp3" preload="auto"></audio>
+
+<!-- ===== 箭矢 / 菓子動畫容器（全域） ===== -->
+<div id="anim-layer" class="anim-layer"></div>
+
+<!-- ================================================ -->
+<!-- 登入畫面                                          -->
+<!-- ================================================ -->
+<div class="screen active" id="screen-login">
+  <div class="login-wrapper">
+    <div class="login-deco-paw">🌿</div>
+    <div class="login-logo">
+      <div class="logo-eevee-icon">
+        <img
+          src="images/capy_login.png"
+          alt="卡比巴拉"
+          width="96" height="96"
+          style="object-fit:contain; image-rendering:auto; filter:drop-shadow(0 4px 12px rgba(139,109,56,0.4));"
+          onerror="this.style.display='none'; this.parentElement.textContent='🦫';"
+        >
+      </div>
+      <h1 class="logo-title">卡比巴拉分數小數<br>互化研究所</h1>
+      <p class="logo-sub">Capybara Math Lab ✦ 分數 ⇄ 小數</p>
+    </div>
+
+    <div class="login-card glass-panel">
+      <div class="input-group">
+        <label for="input-trainer-name">🎯 研究員代號</label>
+        <input type="text" id="input-trainer-name" placeholder="請輸入你的名字…" maxlength="12" autocomplete="off">
+      </div>
+      <div class="input-group">
+        <label for="input-trainer-pw">🔑 雲端備份密碼</label>
+        <input type="password" id="input-trainer-pw" placeholder="請輸入密碼（新玩家自動註冊）…">
+      </div>
+      <button class="btn-primary" id="btn-login">進入卡比巴拉研究所 ✦</button>
+      <p class="login-hint">💡 新玩家第一次登入會自動建立帳號</p>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================ -->
+<!-- 選擇目標卡比巴拉 視窗                              -->
+<!-- ================================================ -->
+<div class="modal-overlay hidden" id="overlay-choose-eevee">
+  <div class="modal-box glass-panel" id="modal-choose-eevee">
+    <div class="modal-title">🌟 選擇本次培育目標</div>
+    <p class="modal-sub">選擇一隻你想要解鎖的卡比巴拉！</p>
+    <div class="eevee-grid" id="eevee-pick-grid">
+      <!-- JS 動態渲染 -->
+    </div>
+  </div>
+</div>
+
+<!-- ================================================ -->
+<!-- 遊戲主畫面                                        -->
+<!-- ================================================ -->
+<div class="screen hidden" id="screen-game">
+
+  <!-- 頂部資訊列 -->
+  <div class="game-topbar">
+    <div class="topbar-trainer" id="topbar-trainer">🎯 ---</div>
+    <div class="topbar-target" id="topbar-target">
+      <span id="topbar-eevee-name">---</span>
+      <span class="topbar-score" id="topbar-score">0 分</span>
+    </div>
+    <button class="btn-quit-small" id="btn-quit">✕ 退出</button>
+  </div>
+
+  <!-- 進度條 -->
+  <div class="progress-bar-wrap">
+    <div class="progress-bar-bg">
+      <div class="progress-bar-fill" id="progress-fill"></div>
+    </div>
+    <div class="progress-label" id="progress-label">0 / 300 分</div>
+  </div>
+
+  <!-- 卡比巴拉展示區 -->
+  <div class="eevee-stage">
+    <div class="eevee-emotion-bubble" id="emotion-bubble">( ´ ▽ ` )ﾉ</div>
+    <div class="eevee-sprite-wrap" id="eevee-sprite-wrap">
+      <img class="eevee-sprite" id="eevee-sprite" src="" alt="卡比巴拉">
+      <div class="chomp-burst" id="chomp-burst"></div>
+    </div>
+    <div class="eevee-name-tag" id="eevee-name-tag">卡比巴拉</div>
+  </div>
+
+  <!-- Combo 顯示 -->
+  <div class="combo-display hidden" id="combo-display">
+    <span class="combo-icon">⚡</span>
+    <span id="combo-text">COMBO ×2</span>
+  </div>
+
+  <!-- 題目面板 -->
+  <div class="question-panel glass-panel">
+    <div class="question-label">第 <span id="q-num">1</span> 題</div>
+    <div class="question-text" id="question-text">-- = --</div>
+  </div>
+
+  <!-- 三個答案選項 -->
+  <div class="answers-container" id="answers-container">
+    <!-- 動態渲染 -->
+  </div>
+
+  <!-- 答題紀錄 chips -->
+  <div class="answer-chips" id="answer-chips"></div>
+
+</div>
+
+<!-- ================================================ -->
+<!-- 恭喜解鎖 彈窗                                      -->
+<!-- ================================================ -->
+<div class="modal-overlay hidden" id="overlay-congrats">
+  <div class="modal-box glass-panel congrats-box" id="modal-congrats">
+    <div class="congrats-fireworks" id="congrats-fireworks">✨🎉✨</div>
+    <div class="congrats-eevee-img">
+      <img id="congrats-sprite" src="" alt="">
+    </div>
+    <div class="congrats-title" id="congrats-title">🎉 恭喜！</div>
+    <p class="congrats-msg" id="congrats-msg">你成功解鎖了新的卡比巴拉！</p>
+    <button class="btn-primary" id="btn-congrats-ok">太棒了！繼續 →</button>
+  </div>
+</div>
+
+<!-- ================================================ -->
+<!-- 大爆機通關特效畫面                                 -->
+<!-- ================================================ -->
+<div class="screen hidden master-victory" id="screen-master">
+  <div class="master-inner">
+    <div class="master-trophy">🏆</div>
+    <h1 class="master-title">全圖鑑大爆機！</h1>
+    <p class="master-sub">
+      🎉 恭喜！你已解鎖全部 8 隻卡比巴拉！<br>
+      你是真正的「卡比巴拉研究所所長」！
+    </p>
+    <div class="master-eevee-parade" id="master-eevee-parade">
+      <!-- 8 隻圖示 -->
+    </div>
+    <button class="btn-primary" id="btn-master-continue">繼續休閒模式 ▶</button>
+  </div>
+</div>
+
+<!-- ================================================ -->
+<!-- 載入遮罩                                           -->
+<!-- ================================================ -->
+<div class="loading-overlay hidden" id="loading-overlay">
+  <div class="loading-paw">🍊</div>
+  <p class="loading-text">雲端連線中…</p>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
